@@ -104,22 +104,19 @@ class Rectanglify:
         self.update_action_state()
 
     def attach_to_project(self):
+        """Connect newly added layers to monitor their selection and editing state"""
         QgsProject.instance().layerWasAdded[QgsMapLayer].connect(self.connect_layer)
-        self.connect_layers()
-
-    def detach_from_project(self):
-        QgsProject.instance().layerWasAdded[QgsMapLayer].disconnect(self.connect_layer)
-        self.disconnect_layers()
-
-    def connect_layers(self):
         for layer in QgsProject.instance().mapLayers().values():
             self.connect_layer(layer)
 
-    def disconnect_layers(self):
+    def detach_from_project(self):
+        """Disconnect all layers"""
+        QgsProject.instance().layerWasAdded[QgsMapLayer].disconnect(self.connect_layer)
         for layer in QgsProject.instance().mapLayers().values():
             self.disconnect_layer(layer)
 
     def connect_layer(self, layer):
+        """Connect layer to monitor their selection and editing state"""
         if (
             isinstance(layer, QgsVectorLayer)
             and layer.geometryType() == QgsWkbTypes.PolygonGeometry
@@ -129,6 +126,7 @@ class Rectanglify:
             layer.selectionChanged.connect(self.update_action_state)
 
     def disconnect_layer(self, layer):
+        """Diconnect from layer signals"""
         if (
             isinstance(layer, QgsVectorLayer)
             and layer.geometryType() == QgsWkbTypes.PolygonGeometry
@@ -138,7 +136,7 @@ class Rectanglify:
             layer.selectionChanged.disconnect(self.update_action_state)
 
     def update_action_state(self):
-
+        """Enable/Disable action"""
         layer: QgsVectorLayer = self.iface.activeLayer()
         enabled = (
             isinstance(layer, QgsVectorLayer)
@@ -164,9 +162,9 @@ class Rectanglify:
         self.detach_from_project()
 
     def rectanglify(self):
+        """Rectanglify active layer's features"""
 
         layer: QgsVectorLayer = self.iface.activeLayer()
-
         only_selected = layer.selectedFeatureCount() > 0
 
         with BeginCommand(

@@ -1,25 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-/***************************************************************************
- Rectanglify
- A QGIS plugin
- Add a digitizing tool which "rectanglifies" selected features of a polygon vector layer
-
-                              -------------------
-        begin                : 2020-04-28
-        git sha              : $Format:%H$
-        copyright            : (C) 2020 Yoann Quenach de Quivillic
-        email                : yoann.quenach@gmail.com
- ***************************************************************************/
-
-/***************************************************************************
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- ***************************************************************************/
+Utilities functions for the rectanglify plugin
 """
 import math
 
@@ -32,6 +13,10 @@ from qgis.core import (
 
 
 class BeginCommand:
+    """
+    Context Manager that starts an edit command and ensure it is not kept hanging.
+    """
+
     def __init__(self, layer, command_name):
         self.layer: QgsVectorLayer = layer
         self.command_name = command_name
@@ -41,8 +26,8 @@ class BeginCommand:
             self.layer.startEditing()
         self.layer.beginEditCommand(self.command_name)
 
-    def __exit__(self, type, value, traceback):
-        if type:
+    def __exit__(self, exception_type, value, traceback):
+        if exception_type is not None:
             self.layer.destroyEditCommand()
         else:
             self.layer.endEditCommand()
@@ -50,6 +35,15 @@ class BeginCommand:
 
 
 def oriented_bounding_box(geometry, angle=0):
+    """Compute the oriented bounding box of the geometry at a given angle
+
+    Args:
+        geometry (QgsGeometry): Input geometry
+        angle (int, optional): Angle. Defaults to 0.
+
+    Returns:
+        (QgsGemetry, double): Computed oriented bounding box and its area
+    """
     hull = geometry.convexHull()
     if hull.isEmpty():
         return hull
@@ -62,6 +56,16 @@ def oriented_bounding_box(geometry, angle=0):
 
 
 def minimum_bounding_box(feature):
+    """Compute the minimum oriented bounding box for the given feature
+    Works around a bug in QgsGeometry orientedMinimumBoundingBox
+    (https://github.com/qgis/QGIS/pull/34334)
+
+    Args:
+        feature (QgsFeature): Input feature
+
+    Returns:
+        QgsGeometry: Minimum bounding box
+    """
 
     hull = feature.geometry().convexHull()
     if hull.isEmpty():
