@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/plugins/rectanglify" >
+        <file>icon.png</file>
+        <file>actionRectanglify.svg</file>
+    </qresource>
+</RCC>
