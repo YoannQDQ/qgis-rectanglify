@@ -6,7 +6,7 @@ This plugin adds a digitizing tool in the QGIS advanced digitizing toolbar and t
 
 The tool is only enabled for in-edition polygon layers. Behavior depends whether any features are selected or not:
 
-- No selected features selected: rectanglifies all features
+- No selected features: rectanglifies all features
 - Some selected features: rectanglifies selected features
 
 Rectanglify replaces each feature's geometry by its minimum oriented bounding box.
