@@ -6,7 +6,7 @@
 name=Rectanglify
 qgisMinimumVersion=3.0
 description=Add a digitizing tool which "rectanglifies" selected features of a polygon vector layer
-version=1.0.0
+version=1.0.2
 author=Yoann Quenach de Quivillic
 email=yoann.quenach@gmail.com
 
@@ -15,7 +15,9 @@ about=Add a digitizing tool which "rectanglifies" selected features of a polygon
 hasProcessingProvider=no
 
 
-changelog=1.0.1 2020-04-30
+changelog=1.0.2 2020-04-30
+      * Handle Multi polygon
+      1.0.1 2020-04-30
       * Remove experimental status
       1.0.0 2020-04-29
       * First version

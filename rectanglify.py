@@ -33,6 +33,7 @@ from qgis.core import (
     QgsWkbTypes,
     QgsProject,
     QgsMapLayer,
+    QgsGeometry,
 )
 
 # Initialize Qt resources from file resources.py
@@ -184,5 +185,14 @@ class Rectanglify:
                 )
 
             for feat in features:
-                new_geom = minimum_bounding_box(feat)
+
+                if feat.geometry().isMultipart():
+
+                    multi = [
+                        minimum_bounding_box(QgsGeometry.fromPolygonXY(polygon))
+                        for polygon in feat.geometry().asMultiPolygon()
+                    ]
+                    new_geom = QgsGeometry.collectGeometry(multi)
+                else:
+                    new_geom = minimum_bounding_box(feat.geometry())
                 layer.changeGeometry(feat.id(), new_geom)

@@ -55,19 +55,19 @@ def oriented_bounding_box(geometry, angle=0):
     return res, oob.area()
 
 
-def minimum_bounding_box(feature):
-    """Compute the minimum oriented bounding box for the given feature
+def minimum_bounding_box(geometry):
+    """Compute the minimum oriented bounding box for the given geometry
     Works around a bug in QgsGeometry orientedMinimumBoundingBox
     (https://github.com/qgis/QGIS/pull/34334)
 
     Args:
-        feature (QgsFeature): Input feature
+        geometry (QgsGeometry): Input feature
 
     Returns:
         QgsGeometry: Minimum bounding box
     """
 
-    hull = feature.geometry().convexHull()
+    hull = geometry.convexHull()
     if hull.isEmpty():
         return hull
 
