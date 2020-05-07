@@ -22,10 +22,11 @@
  ***************************************************************************/
 """
 import os.path
+import traceback
 
 from PyQt5.QtCore import QSettings, QTranslator, QCoreApplication
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QAction
+from PyQt5.QtWidgets import QAction, QDialog
 
 from qgis.core import (
     QgsVectorLayer,
@@ -34,11 +35,18 @@ from qgis.core import (
     QgsProject,
     QgsMapLayer,
     QgsGeometry,
+    QgsTask,
+    QgsApplication,
+    Qgis,
 )
+
+from qgis.utils import QgsMessageLog
 
 # Initialize Qt resources from file resources.py
 from .resources import *
-from .utils import BeginCommand, minimum_bounding_box
+from .utils import BeginCommand, rectanglify_geometry
+
+from .settingsdialog import Ui_SettingsDialog
 
 
 class Rectanglify:
@@ -67,9 +75,18 @@ class Rectanglify:
             self.translator.load(locale_path)
             QCoreApplication.installTranslator(self.translator)
 
-        # Declare instance attributes
-        self.actions = []
-        self.menu = self.tr(u"&Rectanglify")
+        # Init settings
+        self.settings = QSettings()
+        self.settings.beginGroup("plugins/rectanglify")
+        self.settings.setValue(
+            "constantArea", self.settings.value("constantArea", True, bool)
+        )
+        self.settings.setValue(
+            "keepRings", self.settings.value("keepRings", True, bool)
+        )
+        self.settings.setValue(
+            "ringsShareAxes", self.settings.value("ringsShareAxes", True, bool)
+        )
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -94,15 +111,32 @@ class Rectanglify:
             self.tr("Rectanglify Selected Features"),
             parent=self.iface.mainWindow(),
         )
-
         self.rectanglify_action.triggered.connect(self.rectanglify)
 
+        self.settings_action = QAction(
+            QIcon(""), self.tr("Rectanglify Settings"), parent=self.iface.mainWindow(),
+        )
+        self.settings_action.triggered.connect(self.open_settings)
+
         self.iface.advancedDigitizeToolBar().addAction(self.rectanglify_action)
+        self.iface.editMenu().addAction(self.rectanglify_action)
+
+        self.plugin_menu = self.iface.pluginMenu().addMenu(
+            QIcon(":/plugins/rectanglify/actionRectanglify.svg"), "Rectanglify"
+        )
+        self.plugin_menu.addAction(self.rectanglify_action)
+        self.plugin_menu.addAction(self.settings_action)
         self.iface.editMenu().addAction(self.rectanglify_action)
 
         self.iface.currentLayerChanged.connect(self.update_action_state)
         self.attach_to_project()
         self.update_action_state()
+
+        self.task_rectanglify: QgsTask = None
+
+        self.dialog = QDialog(self.iface.mainWindow())
+        self.dialog.ui = Ui_SettingsDialog()
+        self.dialog.ui.setupUi(self.dialog)
 
     def attach_to_project(self):
         """Connect newly added layers to monitor their selection and editing state"""
@@ -159,14 +193,28 @@ class Rectanglify:
         """Removes the plugin menu item and icon from QGIS GUI."""
         self.iface.advancedDigitizeToolBar().removeAction(self.rectanglify_action)
         self.iface.editMenu().removeAction(self.rectanglify_action)
+        self.iface.pluginMenu().removeAction(self.plugin_menu.menuAction())
         self.rectanglify_action.deleteLater()
         self.detach_from_project()
 
     def rectanglify(self):
+        """Create a QgsTask that will perform the actual rectanglification"""
+
+        # On finished will be called when the tasks ends, whether it failed
+        # or succeeded
+        self.task_rectanglify = QgsTask.fromFunction(
+            "Rectanglify", self._rectanglify, on_finished=self.on_finished,
+        )
+        QgsApplication.taskManager().addTask(self.task_rectanglify)
+
+    def _rectanglify(self, task: QgsTask):
         """Rectanglify active layer's features"""
 
         layer: QgsVectorLayer = self.iface.activeLayer()
         only_selected = layer.selectedFeatureCount() > 0
+        constant_area = self.settings.value("constantArea", True, bool)
+        keep_rings = self.settings.value("keepRings", True, bool)
+        rings_share_axes = self.settings.value("ringsShareAxes", True, bool)
 
         with BeginCommand(
             layer,
@@ -179,20 +227,92 @@ class Rectanglify:
                 features = layer.getSelectedFeatures(
                     QgsFeatureRequest().setSubsetOfAttributes([])
                 )
+                total = layer.selectedFeatureCount()
             else:
                 features = layer.getFeatures(
                     QgsFeatureRequest().setSubsetOfAttributes([])
                 )
+                total = layer.featureCount()
 
-            for feat in features:
+            for i, feat in enumerate(features, 1):
+
+                # Check if task is canceled. Raising an exception will revert any
+                # change made up to this point, thanks to the BeginCommand __exit__
+                # method
+                if task.isCanceled():
+                    raise Exception("Canceled")
 
                 if feat.geometry().isMultipart():
-
                     multi = [
-                        minimum_bounding_box(QgsGeometry.fromPolygonXY(polygon))
+                        rectanglify_geometry(
+                            QgsGeometry.fromPolygonXY(polygon),
+                            constant_area,
+                            keep_rings,
+                            rings_share_axes,
+                        )
                         for polygon in feat.geometry().asMultiPolygon()
                     ]
                     new_geom = QgsGeometry.collectGeometry(multi)
                 else:
-                    new_geom = minimum_bounding_box(feat.geometry())
+                    new_geom = rectanglify_geometry(
+                        feat.geometry(), constant_area, keep_rings, rings_share_axes
+                    )
                 layer.changeGeometry(feat.id(), new_geom)
+
+                # Report task progress
+                task.setProgress(i * 100 / total)
+
+    def on_finished(self, exception, result=None):
+        """Task completion handler"""
+
+        # Task is either canceled or another exception occured
+        if exception:
+
+            # If task is canceled, simply display a temporary info message
+            if self.task_rectanglify.isCanceled():
+                self.iface.messageBar().pushMessage(self.tr("Rectanglify canceled"))
+
+            # Else, display a warning message, and log exception in the Message log
+            else:
+                trace = "\n".join(
+                    traceback.format_exception(
+                        type(exception), exception, exception.__traceback__
+                    )
+                )
+                QgsMessageLog.logMessage(
+                    f"Exception during Rectanglify: {trace}",
+                    "Rectanglify",
+                    Qgis.Warning,
+                )
+                self.iface.messageBar().pushMessage(
+                    self.tr("Rectanglify failed. See message log for details."),
+                    level=Qgis.Warning,
+                )
+
+        self.task_rectanglify = None
+
+    def open_settings(self):
+        """Open the settings dialog"""
+
+        # Update Checkboxes from plugin settings
+        self.dialog.ui.constantAreaCheckBox.setChecked(
+            self.settings.value("constantArea", True, bool)
+        )
+        self.dialog.ui.keepRingsCheckBox.setChecked(
+            self.settings.value("keepRings", True, bool)
+        )
+        self.dialog.ui.sharedAxesCheckBox.setChecked(
+            self.settings.value("ringsShareAxes", True, bool)
+        )
+
+        # If dialog is accepted (click on Ok button), update plugin settings
+        if self.dialog.exec() == QDialog.Accepted:
+            self.settings.setValue(
+                "constantArea", self.dialog.ui.constantAreaCheckBox.isChecked()
+            )
+            self.settings.setValue(
+                "keepRings", self.dialog.ui.keepRingsCheckBox.isChecked()
+            )
+            self.settings.setValue(
+                "ringsShareAxes", self.dialog.ui.sharedAxesCheckBox.isChecked()
+            )
