@@ -16,7 +16,7 @@ Note that it relies on a custom implementation of the obb, since the QGIS method
 
 Settings
 --
-Since version 1.0.2, its is possible to fine tune how the rectanglification is applied (in the Plugin Menu)
+Since version 1.0.3, its is possible to fine tune how the rectanglification is applied (in the Plugin Menu)
 
 ![Settings](./docs/settings.png)
 
